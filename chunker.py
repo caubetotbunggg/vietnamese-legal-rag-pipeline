@@ -3,6 +3,8 @@ import os
 import re
 from email.mime import text
 
+from paths import DATA_DIR
+
 
 def chunk_by_chapter_and_article(text):
     # Tìm tất cả chương (cả số và số La Mã, có hoặc không có dấu chấm)
@@ -51,8 +53,8 @@ def chunk_by_chapter_and_article(text):
 
 
 def process_all_files():
-    input_dir = "../BTTH3/data/processed/text"
-    output_dir = "../BTTH3/data/processed/chunks"
+    input_dir = DATA_DIR / "processed/text"
+    output_dir = DATA_DIR / "processed/chunks"
     os.makedirs(output_dir, exist_ok=True)
     failed_files = []
     for filename in os.listdir(input_dir):
@@ -70,7 +72,7 @@ def process_all_files():
                 json.dump(chunks, f, ensure_ascii=False, indent=2)
     if failed_files:
         # Lưu danh sách file lỗi vào JSON
-        unstructured_dir = "../BTTH3/data/unstructured"
+        unstructured_dir = DATA_DIR / "unstructured"
         os.makedirs(unstructured_dir, exist_ok=True)
         failed_path = os.path.join(unstructured_dir, "failed_regex.json")
         with open(failed_path, "w", encoding="utf-8") as f:

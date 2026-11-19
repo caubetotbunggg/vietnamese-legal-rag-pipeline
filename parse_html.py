@@ -3,6 +3,8 @@ import os
 
 from bs4 import BeautifulSoup
 
+from paths import DATA_DIR
+
 
 def extract_loai_van_ban_va_linh_vuc(soup):
     docitem = soup.find("div", class_="docitem-13")
@@ -89,11 +91,11 @@ def parse_luat_html(soup):
 
 def main():
     # Đường dẫn đến thư mục chứa các file HTML và metadata
-    html_dir = "../BTTH3/data/raw/html"
-    meta_dir = "../BTTH3/data/raw/meta"
+    html_dir = DATA_DIR / "raw/html"
+    meta_dir = html_dir
 
     # Tạo thư mục parsed nếu chưa tồn tại
-    parsed_dir = "../BTTH3/data/raw/parsed"
+    parsed_dir = DATA_DIR / "raw/parsed"
     os.makedirs(parsed_dir, exist_ok=True)
 
     # Lặp qua từng file HTML trong thư mục

@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from bs4 import BeautifulSoup
 
+from paths import DATA_DIR, LOG_DIR
+
 
 def fetch_page(page_index):
     time.sleep(rate_limit_delay)
@@ -42,7 +44,8 @@ def main():
         "Cookie": "MUID=...",
     }
 
-    logging.basicConfig(filename="../BTTH3/log/failed_links.log", level=logging.ERROR)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(filename=LOG_DIR / "failed_links.log", level=logging.ERROR)
 
     base_url = "https://luatvietnam.vn"
     search_url_template = (
@@ -74,8 +77,8 @@ def main():
 
     # Ghi file JSON
     all_urls_list = list(all_urls)
-    os.makedirs("../BTTH3/data/raw", exist_ok=True)
-    with open("../BTTH3/data/raw/law_links.json", "w", encoding="utf-8") as f:
+    os.makedirs(DATA_DIR / "raw", exist_ok=True)
+    with open(DATA_DIR / "raw/law_links.json", "w", encoding="utf-8") as f:
         json.dump(all_urls_list, f, ensure_ascii=False, indent=2)
 
     print(f"\nĐã lưu {len(all_urls_list)} URL")

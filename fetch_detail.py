@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from bs4 import BeautifulSoup
 
+from paths import DATA_DIR, LOG_DIR
+
 
 def process_url(url, headers):
     time.sleep(rate_limit_delay)
@@ -39,12 +41,12 @@ def process_url(url, headers):
         title = metadata_json.get("name", "")
         date = metadata_json.get("legislationDate", "")
 
-        os.makedirs("../BTTH3/data/raw/html", exist_ok=True)
-        html_path = f"../BTTH3/data/raw/html/{law_id}.html"
+        os.makedirs(DATA_DIR / "raw/html", exist_ok=True)
+        html_path = DATA_DIR / f"raw/html/{law_id}.html"
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(html)
 
-        meta_path = f"../BTTH3/data/raw/html/{law_id}_meta.json"
+        meta_path = DATA_DIR / f"raw/html/{law_id}_meta.json"
         metadata_to_save = {"law_id": law_id, "title": title, "date": date}
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(metadata_to_save, f, ensure_ascii=False, indent=2)
@@ -53,7 +55,7 @@ def process_url(url, headers):
 
 
 def main():
-    with open("../BTTH3/data/raw/law_links.json", "r", encoding="utf-8") as f:
+    with open(DATA_DIR / "raw/law_links.json", "r", encoding="utf-8") as f:
         data = json.load(f)
 
     # Lọc bỏ dự thảo
@@ -68,7 +70,8 @@ def main():
     }
 
     # Cấu hình log fail
-    logging.basicConfig(filename="../BTTH3/log/failed_access_links.log", level=logging.ERROR)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(filename=LOG_DIR / "failed_access_links.log", level=logging.ERROR)
 
     # Đa luồng tải chi tiết
     concurrency_limit = 5  # Số thread tối đa

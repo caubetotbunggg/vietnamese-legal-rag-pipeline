@@ -1,6 +1,8 @@
 import csv
 import os
 
+from paths import DATA_DIR
+
 
 def get_ids(folder, extension):
     list_ids = []
@@ -10,9 +12,9 @@ def get_ids(folder, extension):
     return list_ids
 
 
-html_folder = "../BTTH3/data/raw/html"
-parsed_folder = "../BTTH3/data/raw/parsed"
-manifest_path = "../BTTH3/data/raw/manifest.csv"
+html_folder = DATA_DIR / "raw/html"
+parsed_folder = DATA_DIR / "raw/parsed"
+manifest_path = DATA_DIR / "raw/manifest.csv"
 
 html_ids = set(get_ids(html_folder, ".html"))
 parsed_ids = set(get_ids(parsed_folder, ".json"))

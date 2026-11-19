@@ -1,9 +1,12 @@
-import os
 import json
+import os
+
+from paths import DATA_DIR
+
 
 def main():
-    input_dir = "data/processed/chunks"
-    output_path = "data/processed/all_chunks.json"
+    input_dir = DATA_DIR / "processed/chunks"
+    output_path = DATA_DIR / "processed/all_chunks.json"
     all_chunks = []
 
     for filename in os.listdir(input_dir):
