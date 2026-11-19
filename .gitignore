@@ -2,7 +2,7 @@ data/
 __pycache__/
 chroma_db/
 .env
-.coverage
+.coverage*
 log/
 FlagEmbedding/
 .vscode
