@@ -1,152 +1,185 @@
-# Vietnamese Legal RAG Pipeline
+# Vietnamese Legal RAG
 
-**A data preparation pipeline for Vietnamese legal retrieval-augmented generation.**
+**A Vietnamese legal question-answering application with agent-guided retrieval, hybrid search, and a web chat interface.**
 
-Collect legal documents, extract their text and metadata, and split them into chapter, article, and clause records for downstream search and question answering. The implementation uses Python, Requests, Beautiful Soup, and regular expressions to preserve legal structure during preprocessing.
+The application combines an Elysia reasoning tree, hosted text embeddings, Weaviate hybrid search, and Groq answer generation. It includes a FastAPI backend, a Gradio chat UI, document preparation/indexing scripts, and Prometheus metrics.
 
-> **Project scope:** This repository implements the ingestion and preprocessing layer of a legal RAG application. Embedding generation, a vector index, retrieval, LLM answer generation, and a chatbot interface are future work; they are not included in the current code.
+**Stack:** Python 3.11 · FastAPI · Gradio · Weaviate · Elysia · Gemini · Groq.
 
-## Highlights
+## Features
 
-- Concurrent list and detail crawlers with request timeouts, per-worker delays, and failure logs.
-- Extraction of document identifiers, titles, dates, document types, and legal fields where available.
-- HTML-to-text cleaning and structure-aware splitting into **Chương → Điều → Khoản**.
-- Per-document chunk files, a combined JSON dataset, and an HTML/parsed-file manifest.
-- Existing tests for chunking, cleaning, and assembled dataset structure.
+- **Legal document ingestion:** Crawl HTML and metadata, extract legal text, and split Vietnamese chapters, articles, and clauses.
+- **Embedding and indexing:** Build local embeddings with Sentence Transformers and index document chunks in Weaviate.
+- **Hybrid retrieval:** Combine vector similarity with lexical search and return scored chunks from `/retrieve`.
+- **Agent-guided RAG:** An Elysia tree uses a legal retrieval tool to gather relevant provisions; Groq generates the final answer from the retrieved reasoning output.
+- **Chat UI and API:** Gradio at `/`, OpenAPI documentation at `/docs`, and separate retrieval/RAG routes.
+- **Operations:** Health checks, request metrics at `/metrics`, runtime logs, and a Dockerfile.
 
-## Pipeline
+## Architecture
 
 ```mermaid
-flowchart LR
-    A[Legal document listings] --> B[Detail HTML and metadata]
-    B --> C[Clean legal text]
-    C --> D[Chapter and article chunking]
-    D --> E[Clause records]
-    E --> F[Combined JSON dataset]
-    B --> G[Optional HTML metadata parser]
-    G --> H[Parsed document JSON]
+flowchart TD
+    A[Legal HTML and metadata] --> B[Clean and chunk]
+    B --> C[Sentence Transformers embeddings]
+    C --> D[Weaviate Document collection]
+    U[User question] --> V[Gradio UI or POST /rag]
+    V --> E[Elysia reasoning tree powered by Gemini]
+    E --> F[Legal retrieval tool]
+    F --> G[Hosted query embedding endpoint]
+    G --> D
+    D --> E
+    E --> H[Groq answer generation]
+    H --> I[Answer and reasoning]
+    Q[POST /retrieve] --> G
+    D --> R[Scored chunks and metadata]
 ```
 
-The chunking path reads cleaned text directly. The optional HTML parser produces a separate document-level JSON representation; its output is not the input to `chunker.py`.
-
-## Included data
-
-Counts below describe the checked-in snapshot, not a live crawl or a quality benchmark.
-
-| Artifact | Count |
-| --- | ---: |
-| Saved HTML documents | 522 |
-| Cleaned text files | 522 |
-| Per-document chunk files | 522 |
-| Non-empty per-document chunk files | 407 |
-| Records in `all_chunks.json` | 51,931 |
-
-There are **115 empty chunk files** in the snapshot. The regex parser can miss documents without recognized chapter headings and needs further evaluation. A chunk count alone does not establish document coverage, legal validity, or retrieval quality.
-
-### Chunk format
-
-Illustrative record with shortened content:
-
-```json
-{
-  "chuong": "CHƯƠNG I",
-  "tieu_de": "Điều 1. Quy định chung",
-  "noi_dung": "1. Nội dung khoản thứ nhất...",
-  "khoan": [
-    {"khoan": "1.", "noi_dung": "Nội dung khoản thứ nhất..."}
-  ]
-}
-```
-
-`khoan` is `null` when no numbered clauses are detected. The current combined dataset retains these four content fields; document IDs, source URLs, dates, and other document metadata are **not joined into the chunks**. Per-document filenames preserve the source document identifier before assembly.
+The RAG path uses `app/config/tree_config.py`; `/retrieve` exposes a separate retrieval service. The current RAG response contains `answer` and `reasoning`, rather than a separately validated list of citations.
 
 ## Quick start
 
-Use Python 3.11 or newer. Run commands from the repository root.
+Use Python **3.11**, matching the Dockerfile and CI environment.
 
 ```bash
 git clone https://github.com/caubetotbunggg/vietnamese-legal-rag-pipeline.git
 cd vietnamese-legal-rag-pipeline
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install "requests>=2.32.3" "beautifulsoup4>=4.13.4"
+python -m pip install -r app/requirements.txt
+cp .env.example .env
 ```
 
-On Windows, activate the environment with `.venv\Scripts\activate`. These two packages are sufficient for the data scripts; `environment.yml` also lists the original development tools. `pyproject.toml` currently configures formatting and linting rather than an installable Python package.
+On Windows, activate with `.venv\Scripts\activate` and copy the template with `Copy-Item .env.example .env` in PowerShell.
 
-### Inspect the included dataset without crawling
+Configure `.env` with your own credentials before starting the application:
+
+| Variable | Purpose |
+| --- | --- |
+| `WEAVIATE_URL` | Weaviate Cloud cluster URL |
+| `WEAVIATE_API_KEY` | Cluster credential; the indexed collection is named `Document` |
+| `GEMINI_API_KEY` | Elysia base/complex reasoning models |
+| `GROQ_API_KEY` | Groq client used by the health service |
+| `GROQ_API_KEY_B` | Groq client used for final answer generation |
+| `API_URL` | Optional UI backend URL; defaults to `http://localhost:8000/rag` |
+| `EMBEDDING_MODEL` | Local Sentence Transformers model used by the offline embedding scripts |
+
+The service currently connects to Weaviate Cloud while importing its settings. It requires a reachable cluster and the model credentials; starting the HTTP server alone does not build or populate the index.
+
+Query embeddings currently come from the Gradio endpoint `caubetotbunggg/api_2`, using `/embed_text`. Local document embeddings must use the same embedding model and vector dimensions as this query endpoint. That external endpoint's availability and model configuration are not managed by this repository.
+
+Reasoning and answer model defaults are in `app/config/settings.py`. Check provider availability and update them for your account before a live deployment.
 
 ```bash
-python -c "import json; from pathlib import Path; p=Path('data/processed/all_chunks.json'); rows=json.loads(p.read_text(encoding='utf-8')); print(f'{len(rows):,} chunks'); print(rows[0]['tieu_de'])"
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-### Rebuild chunks from the included cleaned text
+Open `http://localhost:8000/` for chat or `http://localhost:8000/docs` for the API. The UI displays conversation history; the current backend processes each question independently.
 
-These commands overwrite generated chunk files and the combined dataset:
+## API examples
+
+Both POST endpoints accept **query parameters**, not JSON request bodies.
 
 ```bash
-python chunker.py
-python assemble_dataset.py
+# Retrieve scored document chunks
+curl -X POST -G http://localhost:8000/retrieve \
+  --data-urlencode 'user_input=Quyền và nghĩa vụ của người lao động là gì?' \
+  --data-urlencode 'k=5'
+
+# Generate a Vietnamese legal answer
+curl -X POST -G http://localhost:8000/rag \
+  --data-urlencode 'user_input=Thủ tục ly hôn đơn phương như thế nào?'
 ```
 
-Rebuilding can produce a different snapshot because the current chunker has known parsing gaps. Files that produce no chunks are listed in `data/unstructured/failed_regex.json`; existing chunk files are not removed automatically.
+Illustrative response shape for `/rag`:
 
-### Collect and process source documents
+```json
+{
+  "answer": "Câu trả lời dựa trên nội dung được truy xuất...",
+  "reasoning": "Các điều luật được reasoning tree tổng hợp..."
+}
+```
 
-The crawler targets the listing and document markup described in [site structure](docs/site_structure.md). Review the source site's access conditions before collecting data; its HTML and access behavior may change.
+| Method | Endpoint | Result |
+| --- | --- | --- |
+| GET | `/` | Gradio chat UI |
+| POST | `/retrieve` | `chunks` containing text, score, chunk ID, and metadata |
+| POST | `/rag` | `answer` and optional `reasoning` |
+| GET | `/health` | Dependency checks for Weaviate, Groq, and the local UI |
+| GET | `/metrics` | Prometheus HTTP metrics |
+
+`k` controls `/retrieve`. Although `/rag` accepts `k`, its current Elysia tool has a fixed retrieval limit of 5. Retrieval chunk IDs are response-local indices. Metadata can be a stored title string or a structured object. There is no current `/agent` or `/rag-query` route; some historical documents describe earlier versions.
+
+## Prepare documents and build the index
+
+Run scripts as modules from the repository root. Install the additional offline data dependencies only if you need to rebuild the corpus:
 
 ```bash
-python run_crawl.py list    # collect document URLs
-python run_crawl.py detail  # fetch HTML and metadata; skip draft URLs
-python run_crawl.py parse   # optional document-level metadata/content JSON
-python cleaner.py
-python chunker.py
-python assemble_dataset.py
-python make_manifest.py
+python -m pip install -r requirements-data.txt
+python -m scripts.run_crawl all
+python -m scripts.cleaner
+python -m scripts.chunker
+python -m scripts.assemble_dataset
+python -m scripts.make_manifest
 ```
 
-`python run_crawl.py all` runs only `list`, `detail`, and `parse`. Cleaning, chunking, and assembly remain separate steps. Paths are resolved relative to the repository, so the checkout directory does not need the original coursework name.
+The crawler targets the markup documented in [site structure](docs/site_structure.md). Source HTML and access behavior can change. Assembly joins each chunk with its document metadata as `{"meta": {...}, "chunk": {...}}`.
 
-The list crawler currently uses 38 pages, batches of 15 pages, up to 10 workers, and a 1.5-second delay per worker. The detail crawler uses up to 5 workers with the same delay. These are source constants, not CLI options; a per-worker delay is not a global rate limiter.
+After choosing an embedding model compatible with query-time embeddings and configuring Weaviate credentials:
+
+```bash
+python -m scripts.build_embeddings
+python -m scripts.index_embeddings
+```
+
+Indexing writes to the `Document` collection. Review the destination and schema before rebuilding an existing collection. `scripts/init_index.py` is a separate local-Weaviate helper; the runtime API and indexing script use Weaviate Cloud.
+
+`data/` is intentionally ignored and is not shipped in the application branch. The older coursework snapshot is still available in [Git history](https://github.com/caubetotbunggg/vietnamese-legal-rag-pipeline/tree/3c0468196d774e9a9db55e9b0151f9be0b58a3a8/data). Its 51,931 records describe that historical snapshot, not the current deployed index or an evaluation result.
+
+## Tests
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest tests -q
+```
+
+The automated suite replaces Weaviate and reasoning-tree setup with test doubles and mocks external model calls. It checks service/API behavior without production credentials. It does not measure legal answer quality or verify a live deployment. CI runs these tests on Python 3.11.
+
+## Docker
+
+```bash
+docker build -f app/Dockerfile -t vietnamese-legal-rag .
+docker run --rm --env-file .env -p 8000:8000 vietnamese-legal-rag
+```
+
+The container requires the same external services and a populated index as local execution. The monitoring Compose file is under `monitoring/`; its targets may need adjustment for your environment.
 
 ## Repository layout
 
 ```text
-.
-├── run_crawl.py          # CLI for listing, fetching, and optional parsing
-├── list_crawler.py       # collect and deduplicate document URLs
-├── fetch_detail.py       # save HTML and document metadata
-├── parse_html.py         # parse document structure from source markup
-├── cleaner.py            # extract text from the legal document container
-├── chunker.py            # split chapters, articles, and clauses
-├── assemble_dataset.py   # combine per-document chunks
-├── make_manifest.py      # compare saved HTML and parsed JSON
-├── paths.py              # paths independent of checkout directory name
-├── data/
-│   ├── raw/              # URLs, HTML, metadata, and parsed document JSON
-│   ├── processed/        # text, per-document chunks, and all_chunks.json
-│   └── unstructured/     # documents requiring inspection
-├── docs/                 # source markup notes and crawling strategy
-└── tests/                # existing unittest suite
+app/
+  main.py                 # FastAPI lifecycle and Gradio chat interface
+  config/                 # credentials, paths, and Elysia tree/tool setup
+  controllers/            # retrieval, RAG, and health HTTP endpoints
+  services/               # hybrid retrieval, answer generation, health checks
+  models/                 # Pydantic response/request models
+  prompts/                # retrieval reasoning and answer prompt templates
+scripts/                  # crawling, cleaning, chunking, embeddings, indexing
+tests/                    # isolated service/API tests
+monitoring/               # Prometheus and Grafana configuration
+postman/                  # historical API collections
+docs/                     # design notes and historical test reports
 ```
 
-`cleaner_debug.py` is a manual fallback that extracts text from the entire HTML page. Its output may include navigation and other page content; inspect it before using it for retrieval.
+## Development history
 
-## Validation and current limitations
+The original default branch contained the early data pipeline. The complete application was developed on `dev-test-deploy`, then extended on `dev` with UI, prompt, and test updates. `main` now integrates `dev`, which includes the full deployment branch history. Older weekly, backup, and experimental precision branches remain available for reference.
 
-```bash
-python -m unittest discover -s tests -v
-```
+## Current limitations
 
-The existing suite is not fully passing: a chunking fixture demonstrates article references being split as new articles, and the cleaner fixtures omit the document container required by the implementation. These issues need behavior-level fixes and representative document fixtures.
+- External embedding/model services and Weaviate credentials are needed for live execution. Defaults and model availability should be checked before deployment.
+- The reasoning tree uses shared process-level state; concurrent-request isolation needs evaluation.
+- `/rag` does not yet honor its requested retrieval limit or return structured source IDs/URLs. Citations in generated prose are not independently validated.
+- Chunk coverage, legal document versions/effective dates, and end-to-end retrieval quality need a reproducible evaluation set.
+- Historical manual/load-test reports describe older endpoints and do not establish current performance. No fresh quality or latency benchmark is claimed here.
 
-Other limitations to address before building a legal QA demo:
-
-- Preserve document provenance, stable chunk IDs, source URLs, and effective-date/version metadata through assembly.
-- Add coverage for chapterless documents, in-text article references, and unexpected source markup.
-- Validate metadata and content completeness instead of relying on file existence alone.
-- Add embeddings, retrieval, source-cited generation, and a small reproducible evaluation set.
-
-## Source and intended use
-
-The data was collected from [LuatVietnam](https://luatvietnam.vn/) for a learning project. The saved snapshot is historical and is not maintained as an authoritative or current legal corpus. It is intended for engineering experiments; verify source status and applicable data permissions before reuse. This repository currently has no license file granting general reuse rights.
+The corpus originates from [LuatVietnam](https://luatvietnam.vn/). This is an educational legal QA project; verify source permissions and the current legal status of retrieved documents before reuse. This repository currently has no license file granting general reuse rights.

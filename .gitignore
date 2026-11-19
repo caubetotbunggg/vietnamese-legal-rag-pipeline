@@ -1,5 +1,14 @@
+data/
 __pycache__/
+chroma_db/
+.env
+.coverage
+log/
+FlagEmbedding/
+.vscode
 *.py[cod]
 .venv/
-.env
 .DS_Store
+.pytest_cache/
+htmlcov/
+coverage.xml
